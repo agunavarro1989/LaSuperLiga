@@ -38,6 +38,31 @@ const resizeImage = (file, callback, maxWidth = 300, maxHeight = 400, quality = 
   }; reader.readAsDataURL(file);
 };
 
+// --- NUEVO: UTILIDADES PARA COLORES Y MARCOS ---
+const getRgba = (colorStr, alphaPercent) => {
+    const alpha = alphaPercent / 100;
+    if (!colorStr) return `rgba(0,0,0,${alpha})`;
+    if (colorStr.startsWith('#')) {
+        let r = 0, g = 0, b = 0;
+        if (colorStr.length === 4) {
+            r = parseInt(colorStr[1] + colorStr[1], 16); g = parseInt(colorStr[2] + colorStr[2], 16); b = parseInt(colorStr[3] + colorStr[3], 16);
+        } else if (colorStr.length >= 7) {
+            r = parseInt(colorStr.slice(1, 3), 16); g = parseInt(colorStr.slice(3, 5), 16); b = parseInt(colorStr.slice(5, 7), 16);
+        }
+        return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+    return colorStr; 
+};
+
+const drawExportBorder = (ctx, canvas, config) => {
+    const bw = parseInt(config.exportBorderWidth) || 0;
+    if (bw > 0) {
+        ctx.strokeStyle = config.exportBorderColor || config.primaryColor || '#a3e635';
+        ctx.lineWidth = bw * 2; 
+        ctx.strokeRect(0, 0, canvas.width, canvas.height);
+    }
+};
+
 
 // --- COMPONENTE: SELECTOR CON BUSCADOR ---
 function SearchableTeamSelect({ value, options, onChange, placeholder, className }) {
@@ -106,7 +131,8 @@ export default function App() {
   
   const [config, setConfig] = useState({
     pageName: 'La Super Liga', showPageName: true, pageNameSize: 'text-2xl', titleColor: '#a3e635', logoSize: 'h-12 w-12 md:h-14 md:w-14',
-    primaryColor: '#a3e635', accentColor: '#fbbf24', bgColor: '#020617', cardColor: 'rgba(15, 23, 42, 0.7)', textColor: '#f8fafc',
+    primaryColor: '#a3e635', accentColor: '#fbbf24', bgColor: '#020617', cardColor: '#0f172a', textColor: '#f8fafc',
+    bgOpacity: 85, cardOpacity: 70, exportBorderWidth: 0, exportBorderColor: '#a3e635',
     logoUrl: '', bgUrl: 'https://images.unsplash.com/photo-1622204554308-5925bb0902fb?q=80&w=2000&auto=format&fit=crop', 
     exportWithBg: true, exportBgUrl: '', exportBgColor: '', exportShowSponsors: false,
     adminPin: 'padel2026', superAdminPin: 'super2026', 
@@ -226,19 +252,18 @@ export default function App() {
                ctx.save(); ctx.beginPath(); ctx.arc(startX + logoSize/2, yCenter, logoSize/2, 0, Math.PI * 2);
                ctx.closePath(); ctx.clip();
                
-               ctx.fillStyle = config.cardColor || '#1e293b'; ctx.fill();
+               ctx.fillStyle = getRgba(config.cardColor || '#0f172a', config.cardOpacity !== undefined ? config.cardOpacity : 70); 
+               ctx.fill();
                
                const size = Math.max(img.width, img.height); const scale = logoSize / size;
                const dx = (logoSize - img.width * scale) / 2; const dy = (logoSize - img.height * scale) / 2;
                
                ctx.drawImage(img, startX + dx, yCenter - logoSize/2 + dy, img.width * scale, img.height * scale);
                ctx.restore();
-               
-               ctx.beginPath(); ctx.arc(startX + logoSize/2, yCenter, logoSize/2, 0, Math.PI * 2);
-               ctx.lineWidth = 4; ctx.strokeStyle = isWinner ? (config.accentColor || '#fbbf24') : 'rgba(255,255,255,0.2)'; ctx.stroke();
-               
-               startX += logoSize + gap;
-           } catch(e) {}
+           } catch (e) {
+               console.error("Error al cargar la imagen", e);
+           }
+           startX += logoSize + gap;
        }
        
        ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
@@ -259,7 +284,7 @@ export default function App() {
     const boxY = headerY + 480;
     
     ctx.shadowColor = 'rgba(0,0,0,0.8)'; ctx.shadowBlur = 20;
-    ctx.fillStyle = config.cardColor || 'rgba(15, 23, 42, 0.9)'; 
+    ctx.fillStyle = getRgba(config.cardColor || '#0f172a', config.cardOpacity !== undefined ? config.cardOpacity : 70); 
     ctx.beginPath(); ctx.roundRect(canvas.width/2 - 350, boxY, 700, 180, 25); ctx.fill();
     ctx.shadowBlur = 0;
     
@@ -273,6 +298,7 @@ export default function App() {
     ctx.fillText(scoreText, canvas.width / 2, boxY + 130);
 
     await drawExportFooter(ctx, canvas, config, clubs); // Dibujar sponsors
+    drawExportBorder(ctx, canvas, config);
     await handleShareCanvas(canvas, `resultado-${match.round || 'liga'}.png`, action);
   };
 
@@ -291,8 +317,8 @@ export default function App() {
         h1, h2, h3, h4, h5, h6, .font-black, .theme-font-secondary { font-family: ${config.fontSecondary || config.fontPrimary || 'system-ui, sans-serif'}; }
         .theme-text { color: ${config.textColor || '#f8fafc'}; }
         .theme-title-text { color: ${config.titleColor || config.primaryColor || '#a3e635'}; }
-        .theme-bg-base { background-color: ${config.bgColor || '#020617'}; }
-        .theme-bg-card { background-color: ${config.cardColor || 'rgba(15, 23, 42, 0.7)'}; }
+        .theme-bg-base { background-color: ${getRgba(config.bgColor || '#020617', config.bgOpacity !== undefined ? config.bgOpacity : 85)}; }
+        .theme-bg-card { background-color: ${getRgba(config.cardColor || '#0f172a', config.cardOpacity !== undefined ? config.cardOpacity : 70)}; }
         .theme-primary-text { color: ${config.primaryColor || '#a3e635'}; }
         .theme-primary-bg { background-color: ${config.primaryColor || '#a3e635'}; color: #000; }
         .theme-primary-border { border-color: ${config.primaryColor || '#a3e635'}; }
@@ -688,6 +714,129 @@ export default function App() {
   );
 }
 
+// --- MODALES DE DETALLE (Restaurados) ---
+function TeamDetailModal({ team, players, teams, matches, tournaments, onClose, onPlayerClick, config }) {
+  if (!team) return null;
+  const p1 = players.find(p => p.id === team.player1Id);
+  const p2 = players.find(p => p.id === team.player2Id);
+  const p3 = players.find(p => p.id === team.player3Id);
+  const teamMatches = matches.filter(m => m.team1Id === team.id || m.team2Id === team.id).sort((a,b) => b.createdAt - a.createdAt);
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in" onClick={onClose}>
+      <div className="theme-bg-card border border-white/10 w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden relative flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
+        <button onClick={onClose} className="absolute top-4 right-4 z-20 bg-black/50 p-2 rounded-full hover:bg-white/20 text-white transition-colors"><X size={20}/></button>
+        <div className="p-6 md:p-8 flex items-center gap-4 border-b border-white/10 relative overflow-hidden">
+           {team.photoUrl && <div className="absolute inset-0 opacity-20 bg-cover bg-center blur-sm" style={{backgroundImage: `url(${team.photoUrl})`}}></div>}
+           <div className="w-20 h-20 rounded-full bg-black/50 border border-white/20 flex items-center justify-center z-10 overflow-hidden shrink-0">
+              {team.photoUrl ? <img src={team.photoUrl} className="w-full h-full object-cover" alt="logo"/> : <Shield size={32} className="text-white"/>}
+           </div>
+           <div className="z-10 flex-1 min-w-0">
+              <h2 className="text-3xl font-black theme-font-secondary text-white truncate">{team.name}</h2>
+              {team.phone && (
+                 <a href={`https://wa.me/${team.phone.replace(/[^0-9]/g, '')}`} target="_blank" rel="noreferrer" className="inline-flex items-center mt-2 text-xs font-bold text-slate-900 bg-emerald-500 hover:bg-emerald-400 px-3 py-1.5 rounded-full transition-colors shadow-lg">
+                    <Phone size={12} className="mr-1.5"/> Contactar Delegado
+                 </a>
+              )}
+           </div>
+        </div>
+        <div className="p-6 overflow-y-auto custom-scrollbar space-y-8 text-white">
+           <div>
+              <h3 className="text-lg font-bold mb-4 border-b border-white/10 pb-2 flex items-center"><Users className="mr-2 theme-primary-text" size={20}/> Jugadores Registrados</h3>
+              <div className="flex flex-wrap gap-4 justify-center md:justify-start">
+                 <PlayerCardVertical player={p1} onClick={() => onPlayerClick(p1?.id)} config={config} size="lg" />
+                 <PlayerCardVertical player={p2} onClick={() => onPlayerClick(p2?.id)} config={config} size="lg" />
+                 {p3 && <PlayerCardVertical player={p3} title="Suplente" onClick={() => onPlayerClick(p3?.id)} config={config} size="lg" />}
+              </div>
+           </div>
+           <div>
+              <h3 className="text-lg font-bold mb-4 border-b border-white/10 pb-2 flex items-center"><CalendarDays className="mr-2 theme-primary-text" size={20}/> Historial de Partidos</h3>
+              {teamMatches.length === 0 ? (
+                 <p className="opacity-60 text-sm italic">Este equipo aún no ha jugado partidos oficiales.</p>
+              ) : (
+                 <div className="space-y-3">
+                    {teamMatches.map(m => {
+                       const isT1 = m.team1Id === team.id;
+                       const oppId = isT1 ? m.team2Id : m.team1Id;
+                       const opp = teams ? teams.find(t => t.id === oppId) : null;
+                       const won = m.winnerId === team.id;
+                       const isPending = m.status === 'pending';
+                       return (
+                          <div key={m.id} className={`flex flex-col sm:flex-row sm:justify-between sm:items-center bg-white/5 p-3 rounded-xl border border-white/5 ${won ? 'border-l-4 theme-accent-border' : isPending ? 'opacity-70' : 'border-l-4 border-white/10'}`}>
+                             <div className="mb-2 sm:mb-0">
+                                <span className="text-[10px] uppercase font-black opacity-50 flex items-center">
+                                   {m.tournamentName && <span className="mr-1 truncate max-w-[100px]">{String(m.tournamentName)} -</span>} {String(m.round || 'Partido Oficial')}
+                                </span>
+                                <span className="font-bold text-sm">vs {opp ? opp.name : 'Desconocido'}</span>
+                             </div>
+                             <div className="flex items-center gap-3 self-end sm:self-auto bg-black/40 px-3 py-1.5 rounded-lg border border-white/5">
+                                {isPending ? <span className="text-xs font-bold opacity-60">PENDIENTE</span> : (
+                                   <><span className={`font-black text-sm tracking-widest ${won ? 'theme-accent-text' : 'opacity-60'}`}>{[m.s1, m.s2, m.s3].filter(Boolean).join(' ')}</span>{won && <Medal size={16} className="theme-accent-text" />}</>
+                                )}
+                             </div>
+                          </div>
+                       )
+                    })}
+                 </div>
+              )}
+           </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PlayerDetailModal({ player, matches, teams, onClose, config }) {
+  if (!player) return null;
+  const playerTeams = (teams || []).filter(t => t.player1Id === player.id || t.player2Id === player.id || t.player3Id === player.id);
+  return (
+    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in" onClick={onClose}>
+      <div className="theme-bg-card border border-white/10 w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden relative flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
+         <button onClick={onClose} className="absolute top-4 right-4 z-20 bg-black/50 p-2 rounded-full hover:bg-white/20 text-white transition-colors"><X size={20}/></button>
+         <div className="p-8 flex flex-col items-center text-center border-b border-white/10 bg-black/20 text-white relative">
+            <div className="w-28 h-40 rounded-xl bg-black/50 border-2 border-white/20 flex items-center justify-center overflow-hidden mb-4 shadow-xl">
+               {player.photoUrl ? <img src={player.photoUrl} className="w-full h-full object-cover" alt="player"/> : <Users size={40} className="opacity-20"/>}
+            </div>
+            <h2 className="text-2xl font-black theme-font-secondary leading-tight">{player.name}</h2>
+            {player.nickname && <p className="theme-primary-text font-black text-sm mt-1">"{player.nickname}"</p>}
+            <div className="flex gap-2 mt-4">
+               <span className="theme-primary-bg text-black px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-widest shadow-md">{player.category}</span>
+               {player.position && <span className="bg-white/10 border border-white/10 px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-widest shadow-md">{player.position}</span>}
+            </div>
+         </div>
+         <div className="p-6 overflow-y-auto custom-scrollbar space-y-6 text-white">
+            {player.achievements && player.achievements.length > 0 && (
+               <div>
+                  <h3 className="text-xs font-black opacity-50 uppercase tracking-widest mb-3 text-center">Medallas / Logros</h3>
+                  <div className="space-y-2">
+                     {player.achievements.map((a, i) => (
+                        <div key={i} className="flex items-center gap-3 bg-black/40 p-3 rounded-xl border border-white/5 shadow-inner">
+                           <Medal size={24} className={a.type === 'oro' ? 'text-yellow-400 drop-shadow-md' : a.type === 'plata' ? 'text-slate-300' : 'text-amber-700'} />
+                           <span className="text-sm font-bold opacity-90">{a.text}</span>
+                        </div>
+                     ))}
+                  </div>
+               </div>
+            )}
+            <div>
+               <h3 className="text-xs font-black opacity-50 uppercase tracking-widest mb-3 text-center">Equipos Actuales</h3>
+               {playerTeams.length === 0 ? <p className="opacity-60 text-xs text-center italic">No pertenece a ningún equipo.</p> : (
+                  <div className="flex flex-wrap gap-2 justify-center">
+                     {playerTeams.map(t => (
+                        <div key={t.id} className="bg-white/5 border border-white/10 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center">
+                           {t.photoUrl ? <img src={t.photoUrl} className="w-4 h-4 rounded-full mr-2 object-cover" alt="team"/> : <Shield size={12} className="mr-2 opacity-50"/>}
+                           {t.name}
+                        </div>
+                     ))}
+                  </div>
+               )}
+            </div>
+         </div>
+      </div>
+    </div>
+  )
+}
+
 // --- SUBCOMPONENTE: JUGADOR MINI EN GRILLA (RELACIÓN 1:1) ---
 function PlayerMiniCard({ player, isSup }) {
    if(!player) return null;
@@ -730,12 +879,12 @@ const drawExportFooter = async (ctx, canvas, config, clubs) => {
     const gap = 20;
     const totalWidth = sponsors.length * iconSize + (sponsors.length - 1) * gap;
     let startX = (canvas.width - totalWidth) / 2;
-    const y = canvas.height - iconSize - 20; 
+    const y = canvas.height - iconSize - 35; // Separamos más los logos del borde inferior
 
     ctx.textAlign = 'center';
     ctx.fillStyle = config.textColor || '#ffffff';
     ctx.font = `bold 14px "${config.fontPrimary || 'sans-serif'}"`;
-    ctx.fillText("SPONSORS OFICIALES", canvas.width / 2, y - 15);
+    ctx.fillText("SPONSORS OFICIALES", canvas.width / 2, y - 20); // Damos más aire entre el texto y los logos
 
     for (const sponsor of sponsors) {
         try {
@@ -785,8 +934,8 @@ const drawCanvasBg = async (ctx, canvas, config, isExport = true) => {
    const useExportBgUrl = isExport && config.exportBgUrl !== undefined && config.exportBgUrl !== '';
    const useExportBgColor = isExport && config.exportBgColor !== undefined && config.exportBgColor !== '';
    
-   const finalBgUrl = useExportBgUrl ? config.exportBgUrl : (config.exportWithBg !== false ? config.bgUrl : null);
    const finalBgColor = useExportBgColor ? config.exportBgColor : config.bgColor;
+   const finalBgUrl = useExportBgUrl ? config.exportBgUrl : (config.exportWithBg !== false ? config.bgUrl : null);
 
    if (finalBgUrl) {
       try {
@@ -814,15 +963,15 @@ const drawCanvasBg = async (ctx, canvas, config, isExport = true) => {
           ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
           
           // Si sube un fondo export específico, aplicamos menos opacidad para que resalte más.
-          const opacity = useExportBgUrl ? '99' : 'E6'; 
-          ctx.fillStyle = finalBgColor ? finalBgColor + opacity : 'rgba(2, 6, 23, 0.9)'; 
+          const finalAlpha = useExportBgUrl ? 95 : (config.bgOpacity !== undefined ? config.bgOpacity : 85);
+          ctx.fillStyle = finalBgColor ? getRgba(finalBgColor, finalAlpha) : `rgba(2, 6, 23, ${finalAlpha/100})`; 
           ctx.fillRect(0, 0, canvas.width, canvas.height);
       } catch(e) {
-          ctx.fillStyle = finalBgColor || '#0f172a';
+          ctx.fillStyle = finalBgColor ? getRgba(finalBgColor, 100) : '#0f172a';
           ctx.fillRect(0, 0, canvas.width, canvas.height);
       }
   } else {
-      ctx.fillStyle = finalBgColor || '#0f172a'; 
+      ctx.fillStyle = finalBgColor ? getRgba(finalBgColor, 100) : '#0f172a'; 
       ctx.fillRect(0, 0, canvas.width, canvas.height);
   }
 }
@@ -836,10 +985,12 @@ const exportZonesAsImage = async (tournament, allTeams, config, clubs) => {
   let totalRows = 0;
   tournament.zones.forEach(z => totalRows += z.teams.length);
   
-  const sponsorHeight = (config.exportShowSponsors && clubs && clubs.some(c=>c.type==='sponsor')) ? 120 : 0;
+  const sponsorHeight = (config.exportShowSponsors && clubs && clubs.some(c=>c.type==='sponsor')) ? 160 : 0; // Aumentamos el espacio reservado para sponsors
+  const extraPadding = 80; // Margen extra obligatorio al final para evitar colisiones
   
   canvas.width = 1100;
-  canvas.height = 350 + (tournament.zones.length * zoneHeaderHeight) + (totalRows * rowHeight) + (tournament.zones.length * 40) + sponsorHeight;
+  // Corregimos la fórmula: Cada zona ocupa ~125px y cada fila ~45px reales dibujados
+  canvas.height = 350 + (tournament.zones.length * 125) + (totalRows * 45) + sponsorHeight + extraPadding;
   const ctx = canvas.getContext('2d');
 
   await drawCanvasBg(ctx, canvas, config, true);
@@ -862,7 +1013,7 @@ const exportZonesAsImage = async (tournament, allTeams, config, clubs) => {
        return (b.sf || 0) - (a.sf || 0);
     });
 
-    ctx.fillStyle = config.cardColor || 'rgba(30, 41, 59, 0.8)'; ctx.beginPath(); ctx.roundRect(40, currentY, canvas.width - 80, 40, 8); ctx.fill();
+    ctx.fillStyle = getRgba(config.cardColor || '#0f172a', config.cardOpacity !== undefined ? config.cardOpacity : 70); ctx.beginPath(); ctx.roundRect(40, currentY, canvas.width - 80, 40, 8); ctx.fill();
     ctx.textAlign = 'left'; ctx.fillStyle = config.textColor || '#ffffff'; ctx.font = `bold 20px "${fontSecondary}"`;
     ctx.fillText(zone.name, 60, currentY + 28);
     currentY += 60;
@@ -893,6 +1044,7 @@ const exportZonesAsImage = async (tournament, allTeams, config, clubs) => {
   });
   
   await drawExportFooter(ctx, canvas, config, clubs);
+  drawExportBorder(ctx, canvas, config);
   return canvas;
 }
 
@@ -931,7 +1083,7 @@ const exportBracketAsImage = async (tournament, allTeams, config, clubs) => {
 
   const drawMatchBox = (m, x, y, roundName, isLeft, isFinal=false) => {
     ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 10; ctx.shadowOffsetX = 0; ctx.shadowOffsetY = 5;
-    ctx.fillStyle = config.cardColor || 'rgba(30, 41, 59, 0.9)'; ctx.beginPath(); ctx.roundRect(x, y, boxW, boxH, 10); ctx.fill(); ctx.shadowBlur = 0; 
+    ctx.fillStyle = getRgba(config.cardColor || '#0f172a', config.cardOpacity !== undefined ? config.cardOpacity : 70); ctx.beginPath(); ctx.roundRect(x, y, boxW, boxH, 10); ctx.fill(); ctx.shadowBlur = 0; 
     ctx.strokeStyle = isFinal ? (config.accentColor || '#fbbf24') : 'rgba(255,255,255,0.1)'; ctx.lineWidth = isFinal ? 3 : 2; ctx.stroke();
     
     ctx.textAlign = 'center'; ctx.fillStyle = isFinal ? (config.accentColor || '#fbbf24') : (config.primaryColor || '#a3e635'); ctx.font = `bold 12px "${fontPrimary}"`; 
@@ -976,6 +1128,7 @@ const exportBracketAsImage = async (tournament, allTeams, config, clubs) => {
   }
   
   await drawExportFooter(ctx, canvas, config, clubs);
+  drawExportBorder(ctx, canvas, config);
   return canvas;
 };
 
@@ -2696,327 +2849,292 @@ function SuperAdminPanel({ config, db, getCollectionPath }) {
                   </div>
                </div>
             </div>
+
+            <div className="flex justify-end mt-8 relative z-10">
+               <button onClick={handleSave} className="theme-primary-bg text-black font-black px-8 py-4 rounded-xl text-lg transition-colors hover:opacity-80 shadow-xl uppercase tracking-widest flex items-center">
+                  <CheckCircle2 className="mr-2" /> Guardar Panel Súper Admin
+               </button>
+            </div>
+            {msg && <p className="text-center mt-4 font-bold theme-primary-text">{msg}</p>}
          </div>
-         
-         <button onClick={handleSave} className="w-full theme-primary-bg text-black font-black rounded-xl p-4 uppercase tracking-widest transition-colors shadow-lg hover:opacity-80">Guardar Cambios Maestros</button>
-         {msg && <p className="theme-primary-text text-center font-bold text-sm bg-black/20 py-3 rounded-lg border theme-primary-border">{msg}</p>}
       </div>
-   )
+   );
 }
 
 function AdminConfig({ config, db, getCollectionPath }) {
-  const [form, setForm] = useState(config);
-  const [msg, setMsg] = useState('');
-  const [loadingLogo, setLoadingLogo] = useState(false);
-  const [loadingBg, setLoadingBg] = useState(false);
-  const [loadingExportBg, setLoadingExportBg] = useState(false);
+   const [form, setForm] = useState({
+       pageName: config.pageName || '',
+       showPageName: config.showPageName !== false,
+       pageNameSize: config.pageNameSize || 'text-2xl',
+       logoUrl: config.logoUrl || '',
+       logoSize: config.logoSize || 'h-12 w-12 md:h-14 md:w-14',
+       primaryColor: config.primaryColor || '#a3e635',
+       accentColor: config.accentColor || '#fbbf24',
+       bgColor: config.bgColor && config.bgColor.startsWith('#') ? config.bgColor : '#020617',
+       cardColor: config.cardColor && config.cardColor.startsWith('#') ? config.cardColor : '#0f172a',
+       bgOpacity: config.bgOpacity !== undefined ? config.bgOpacity : 85,
+       cardOpacity: config.cardOpacity !== undefined ? config.cardOpacity : 70,
+       exportBorderWidth: config.exportBorderWidth || 0,
+       exportBorderColor: config.exportBorderColor || '#a3e635',
+       textColor: config.textColor || '#f8fafc',
+       titleColor: config.titleColor || '#a3e635',
+       bgUrl: config.bgUrl || '',
+       exportWithBg: config.exportWithBg !== false,
+       exportBgUrl: config.exportBgUrl || '',
+       exportBgColor: config.exportBgColor || '',
+       exportShowSponsors: config.exportShowSponsors || false,
+       showWelcomeMessage: config.showWelcomeMessage !== false,
+       welcomeTitle: config.welcomeTitle || '¡Bienvenido a la web oficial de La Super Liga!',
+       welcomeSubtitle: config.welcomeSubtitle || 'La mejor liga de General Roca',
+       welcomeTitleColor: config.welcomeTitleColor || '#ffffff',
+       welcomeSubtitleColor: config.welcomeSubtitleColor || '#a3e635',
+       welcomeTitleSize: config.welcomeTitleSize || 'text-4xl md:text-5xl',
+       welcomeSubtitleSize: config.welcomeSubtitleSize || 'text-lg md:text-xl',
+       fontPrimary: config.fontPrimary || 'system-ui, sans-serif',
+       fontSecondary: config.fontSecondary || 'system-ui, sans-serif',
+       resultCardSize: config.resultCardSize || 'md'
+   });
+   const [msg, setMsg] = useState('');
+   const [uploadingLogo, setUploadingLogo] = useState(false);
+   const [uploadingBg, setUploadingBg] = useState(false);
+   const [uploadingExportBg, setUploadingExportBg] = useState(false);
 
-  const handleSave = async (e) => {
-    e.preventDefault();
-    await setDoc(doc(db, getCollectionPath('settings'), 'main'), form);
-    setMsg("Configuración guardada exitosamente."); setTimeout(()=>setMsg(''), 3000);
-  };
+   const handleSave = async () => {
+     await setDoc(doc(db, getCollectionPath('settings'), 'main'), form, { merge: true });
+     setMsg("¡Configuración guardada con éxito!"); setTimeout(() => setMsg(''), 3000);
+   };
 
-  const handleLogoUpload = (e) => {
+   const handleImageUpload = (e, field, setUploadingState) => {
      const file = e.target.files[0];
-     if (file) { setLoadingLogo(true); resizeImage(file, (data) => { setForm({...form, logoUrl: data}); setLoadingLogo(false); }, 300, 300, 0.9); }
-  };
+     if (file) {
+        setUploadingState(true);
+        resizeImage(file, (compressed) => {
+           setForm({ ...form, [field]: compressed });
+           setUploadingState(false);
+        }, 1920, 1080, 0.8);
+     }
+   };
 
-  const handleBgUpload = (e) => {
-     const file = e.target.files[0];
-     if (file) { setLoadingBg(true); resizeImage(file, (data) => { setForm({...form, bgUrl: data}); setLoadingBg(false); }, 1920, 1080, 0.8); }
-  };
+   const presetColors = [
+      { name: 'Lime / Dark', p: '#a3e635', a: '#fbbf24', b: '#020617', c: '#0f172a', t: '#f8fafc', title: '#a3e635' },
+      { name: 'Blue / Slate', p: '#3b82f6', a: '#f59e0b', b: '#0f172a', c: '#1e293b', t: '#f1f5f9', title: '#60a5fa' },
+      { name: 'Red / Zinc', p: '#ef4444', a: '#eab308', b: '#18181b', c: '#27272a', t: '#fafafa', title: '#f87171' },
+      { name: 'Purple / Black', p: '#a855f7', a: '#14b8a6', b: '#000000', c: '#111827', t: '#f3f4f6', title: '#c084fc' },
+   ];
 
-  const handleExportBgUpload = (e) => {
-     const file = e.target.files[0];
-     if (file) { setLoadingExportBg(true); resizeImage(file, (data) => { setForm({...form, exportBgUrl: data}); setLoadingExportBg(false); }, 1920, 1080, 0.9); }
-  };
+   const applyPreset = (preset) => {
+      setForm({ ...form, primaryColor: preset.p, accentColor: preset.a, bgColor: preset.b, cardColor: preset.c, textColor: preset.t, titleColor: preset.title });
+   };
 
-  const fontOptions = [
-    { value: 'system-ui, sans-serif', label: 'Predeterminada (Sistema)' },
-    { value: 'Arial, sans-serif', label: 'Arial' },
-    { value: 'Verdana, sans-serif', label: 'Verdana' },
-    { value: 'Tahoma, sans-serif', label: 'Tahoma' },
-    { value: '"Trebuchet MS", sans-serif', label: 'Trebuchet MS' },
-    { value: 'Impact, sans-serif', label: 'Impact (Gruesa)' },
-    { value: 'Georgia, serif', label: 'Georgia (Elegante)' },
-    { value: '"Times New Roman", serif', label: 'Times New Roman' },
-    { value: '"Courier New", monospace', label: 'Courier New (Digital)' }
-  ];
-
-  return (
-    <div className="max-w-4xl mx-auto space-y-8 animate-in slide-in-from-right-4">
-      
-      {/* SECCIÓN BIENVENIDA */}
-      {config.feature_welcome !== false && (
-      <div className="bg-black/20 p-8 rounded-3xl border border-white/10">
-         <h3 className="text-xl font-black mb-6 uppercase tracking-wider flex items-center theme-font-secondary"><MessageCircle className="mr-2 theme-primary-text" /> Mensaje de Bienvenida</h3>
-         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative z-10">
-            <div className="md:col-span-2 flex items-center gap-3 mb-2 pb-4 border-b border-white/10">
-              <input type="checkbox" checked={form.showWelcomeMessage !== false} onChange={e=>setForm({...form, showWelcomeMessage: e.target.checked})} className="w-5 h-5 accent-lime-500 cursor-pointer" />
-              <span className="text-sm font-bold block">Habilitar Mensaje de Bienvenida en la pestaña Inicio</span>
-            </div>
-
-            {form.showWelcomeMessage !== false && (
-              <>
-                <div className="space-y-3 md:col-span-2">
-                  <label className="block text-sm font-bold opacity-60">Título Principal</label>
-                  <input type="text" value={form.welcomeTitle || ''} onChange={e=>setForm({...form, welcomeTitle: e.target.value})} placeholder="Ej: ¡Bienvenido a La Super Liga!" className="w-full bg-black/40 border border-white/10 rounded-xl p-3 outline-none focus:theme-primary-border font-bold text-lg theme-font-secondary" />
-                  <div className="flex flex-col sm:flex-row gap-4">
-                     <div className="flex items-center gap-3 sm:w-1/2">
-                        <input type="color" value={form.welcomeTitleColor || '#ffffff'} onChange={e=>setForm({...form, welcomeTitleColor: e.target.value})} className="w-10 h-10 bg-transparent border-none cursor-pointer rounded-xl shrink-0" />
-                        <span className="text-xs font-bold opacity-60">Color del Título</span>
-                     </div>
-                     <select value={form.welcomeTitleSize || 'text-4xl md:text-5xl'} onChange={e=>setForm({...form, welcomeTitleSize: e.target.value})} className="sm:w-1/2 bg-black/40 border border-white/10 rounded-lg p-2 text-xs outline-none font-bold focus:theme-primary-border">
-                        <option value="text-2xl md:text-3xl">Tamaño: Pequeño</option>
-                        <option value="text-3xl md:text-4xl">Tamaño: Mediano</option>
-                        <option value="text-4xl md:text-5xl">Tamaño: Grande</option>
-                        <option value="text-5xl md:text-6xl">Tamaño: Extra Grande</option>
-                     </select>
-                  </div>
-                </div>
-
-                <div className="space-y-3 md:col-span-2 mt-4 pt-4 border-t border-white/10">
-                  <label className="block text-sm font-bold opacity-60">Subtítulo</label>
-                  <input type="text" value={form.welcomeSubtitle || ''} onChange={e=>setForm({...form, welcomeSubtitle: e.target.value})} placeholder="Ej: La mejor liga de General Roca" className="w-full bg-black/40 border border-white/10 rounded-xl p-3 outline-none focus:theme-primary-border font-bold" />
-                  <div className="flex flex-col sm:flex-row gap-4">
-                     <div className="flex items-center gap-3 sm:w-1/2">
-                        <input type="color" value={form.welcomeSubtitleColor || '#a3e635'} onChange={e=>setForm({...form, welcomeSubtitleColor: e.target.value})} className="w-10 h-10 bg-transparent border-none cursor-pointer rounded-xl shrink-0" />
-                        <span className="text-xs font-bold opacity-60">Color del Subtítulo</span>
-                     </div>
-                     <select value={form.welcomeSubtitleSize || 'text-lg md:text-xl'} onChange={e=>setForm({...form, welcomeSubtitleSize: e.target.value})} className="sm:w-1/2 bg-black/40 border border-white/10 rounded-lg p-2 text-xs outline-none font-bold focus:theme-primary-border">
-                        <option value="text-base md:text-lg">Tamaño: Pequeño</option>
-                        <option value="text-lg md:text-xl">Tamaño: Mediano</option>
-                        <option value="text-xl md:text-2xl">Tamaño: Grande</option>
-                     </select>
-                  </div>
-                </div>
-              </>
-            )}
+   return (
+     <div className="space-y-8 animate-in slide-in-from-right-4">
+       {/* 1. Identidad */}
+       {config.feature_identity !== false && (
+         <div className="bg-black/20 p-6 rounded-3xl border border-white/10">
+           <h3 className="text-xl font-black mb-4 uppercase tracking-wider theme-primary-text flex items-center"><ImageIcon className="mr-2" /> Identidad Visual</h3>
+           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-4">
+                 <div>
+                    <label className="text-xs font-bold opacity-60 uppercase mb-1 block">Nombre de la Página</label>
+                    <input type="text" value={form.pageName} onChange={e=>setForm({...form, pageName: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 outline-none" />
+                 </div>
+                 <div className="flex gap-4">
+                    <label className="flex items-center gap-2 cursor-pointer bg-black/40 px-4 py-2 rounded-xl border border-white/5">
+                       <input type="checkbox" checked={form.showPageName} onChange={e=>setForm({...form, showPageName: e.target.checked})} className="accent-lime-500 w-4 h-4" />
+                       <span className="text-xs font-bold">Mostrar Nombre junto al Logo</span>
+                    </label>
+                 </div>
+              </div>
+              
+              <div>
+                 <label className="text-xs font-bold opacity-60 uppercase mb-2 block">Logo Principal</label>
+                 <div className="flex items-center gap-4">
+                    <div className="w-20 h-20 bg-black/40 rounded-2xl border border-white/10 flex items-center justify-center relative overflow-hidden group">
+                       {form.logoUrl ? <img src={form.logoUrl} className="w-full h-full object-contain p-2" alt="logo" /> : <ImageIcon className="opacity-20 w-8 h-8" />}
+                       <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, 'logoUrl', setUploadingLogo)} className="absolute inset-0 opacity-0 cursor-pointer" />
+                       {uploadingLogo && <div className="absolute inset-0 bg-black/50 flex items-center justify-center"><span className="text-[10px] animate-pulse">...</span></div>}
+                    </div>
+                    <div className="flex-1 space-y-2">
+                       <button onClick={() => setForm({...form, logoUrl: ''})} className="text-xs text-red-400 hover:bg-red-500/10 px-3 py-1.5 rounded-lg transition-colors border border-red-500/20 font-bold">Quitar Logo</button>
+                       <div className="text-[10px] opacity-60 leading-tight">Sube una imagen PNG o JPG.<br/>Click en el recuadro para subir.</div>
+                    </div>
+                 </div>
+              </div>
+           </div>
          </div>
-      </div>
-      )}
+       )}
 
-      {/* SECCIÓN IDENTIDAD */}
-      {config.feature_identity !== false && (
-      <div className="bg-black/20 p-8 rounded-3xl border border-white/10">
-         <h3 className="text-xl font-black mb-6 uppercase tracking-wider flex items-center theme-font-secondary"><ImageIcon className="mr-2 theme-primary-text" /> Identidad de la Página</h3>
-         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-6">
-            
-            <div className="space-y-3">
-               <label className="block text-sm font-bold opacity-60">Logo de la Página (Soporta PNG sin fondo)</label>
-               <div className="flex items-center gap-4">
-                  <div className="w-20 h-20 bg-black/40 rounded-xl border-2 border-dashed border-white/20 flex items-center justify-center overflow-hidden relative">
-                     {loadingLogo ? <span className="text-[10px] theme-primary-text animate-pulse">Cargando...</span> : form.logoUrl ? <img src={form.logoUrl} alt="Logo" className="w-full h-full object-contain"/> : <Camera className="opacity-50" />}
-                     <input type="file" accept="image/*" onChange={handleLogoUpload} className="absolute inset-0 opacity-0 cursor-pointer"/>
-                  </div>
-                  <div className="flex-1">
-                     <p className="text-xs opacity-60 mb-2">Toca el recuadro para subir tu logo, o pega la URL.</p>
-                     <input type="text" value={form.logoUrl} onChange={e=>setForm({...form, logoUrl: e.target.value})} placeholder="https://..." className="w-full bg-black/40 border border-white/10 rounded-lg p-2 text-xs outline-none focus:theme-primary-border mb-2" />
-                     <select value={form.logoSize} onChange={e=>setForm({...form, logoSize: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-lg p-2 text-xs outline-none font-bold focus:theme-primary-border">
-                        <option value="h-8 w-8 md:h-10 md:w-10">Tamaño: Pequeño</option>
-                        <option value="h-12 w-12 md:h-14 md:w-14">Tamaño: Mediano</option>
-                        <option value="h-16 w-16 md:h-20 md:w-20">Tamaño: Grande</option>
-                        <option value="h-20 w-20 md:h-28 md:w-28">Tamaño: Extra Grande</option>
-                     </select>
-                  </div>
-               </div>
-            </div>
-
-            <div className="space-y-3">
-               <label className="block text-sm font-bold opacity-60">Nombre visible de la Página</label>
-               <input type="text" value={form.pageName} onChange={e=>setForm({...form, pageName: e.target.value})} placeholder="Ej: Padel World, La Super Liga..." className="w-full bg-black/40 border border-white/10 rounded-xl p-3 outline-none focus:theme-primary-border font-bold theme-font-secondary" />
-               <div className="flex gap-4 mt-2">
-                  <div className="flex items-center gap-2">
-                     <input type="checkbox" checked={form.showPageName} onChange={e=>setForm({...form, showPageName: e.target.checked})} className="w-4 h-4 accent-lime-500" />
-                     <span className="text-xs font-bold opacity-80">Mostrar Nombre</span>
-                  </div>
-                  <select value={form.pageNameSize} onChange={e=>setForm({...form, pageNameSize: e.target.value})} className="flex-1 bg-black/40 border border-white/10 rounded-lg p-2 text-xs outline-none font-bold">
-                     <option value="text-xl">Tamaño: Pequeño</option>
-                     <option value="text-2xl">Tamaño: Mediano</option>
-                     <option value="text-3xl">Tamaño: Grande</option>
-                     <option value="text-4xl">Tamaño: Extra Grande</option>
-                  </select>
-               </div>
-            </div>
-         </div>
-      </div>
-      )}
-
-      {/* SECCIÓN CARACTERISTICAS DE UI (FUENTES Y TAMAÑOS) */}
-      {(config.feature_fonts !== false || config.feature_cardSize !== false) && (
-      <div className="bg-black/20 p-8 rounded-3xl border border-white/10">
-         <h3 className="text-xl font-black mb-6 uppercase tracking-wider flex items-center theme-font-secondary"><LayoutList className="mr-2 theme-primary-text" /> Tipografía y Estructura</h3>
-         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            
-            {config.feature_fonts !== false && (
-              <>
-                <div className="space-y-3">
-                   <label className="block text-sm font-bold opacity-60">Tipografía Primaria (Textos Generales)</label>
-                   <select value={form.fontPrimary || 'system-ui, sans-serif'} onChange={e=>setForm({...form, fontPrimary: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 outline-none font-bold">
-                      {fontOptions.map(o => <option key={`p-${o.value}`} value={o.value}>{o.label}</option>)}
-                   </select>
-                </div>
-                <div className="space-y-3">
-                   <label className="block text-sm font-bold opacity-60">Tipografía Secundaria (Títulos y Números)</label>
-                   <select value={form.fontSecondary || 'system-ui, sans-serif'} onChange={e=>setForm({...form, fontSecondary: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 outline-none font-bold">
-                      {fontOptions.map(o => <option key={`s-${o.value}`} value={o.value}>{o.label}</option>)}
-                   </select>
-                </div>
-              </>
-            )}
-
-            {config.feature_cardSize !== false && (
-                <div className="space-y-3 md:col-span-2 pt-4 border-t border-white/10">
-                   <label className="block text-sm font-bold opacity-60">Tamaño de las Tarjetas de Resultados</label>
-                   <select value={form.resultCardSize || 'md'} onChange={e=>setForm({...form, resultCardSize: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 outline-none font-bold">
-                      <option value="sm">Pequeño (Diseño compacto)</option>
-                      <option value="md">Mediano (Recomendado)</option>
-                      <option value="lg">Grande (Textos amplios y mayor espaciado)</option>
-                   </select>
-                </div>
-            )}
-         </div>
-      </div>
-      )}
-
-      {/* SECCIÓN COLORES Y FONDO */}
-      {(config.feature_colors !== false || config.feature_background !== false) && (
-      <div className="bg-black/20 p-8 rounded-3xl border border-white/10">
-         <h3 className="text-xl font-black mb-6 uppercase tracking-wider flex items-center theme-font-secondary"><Camera className="mr-2 theme-primary-text" /> Colores y Fondo</h3>
-         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-            
-            {config.feature_background !== false && (
-            <div className="space-y-3 lg:col-span-3">
-               <label className="block text-sm font-bold opacity-60">Imagen de Fondo de Pantalla (Sitio Web)</label>
-               <div className="flex items-center gap-4">
-                  <div className="w-32 h-20 bg-black/40 rounded-lg border-2 border-dashed border-white/20 flex items-center justify-center overflow-hidden relative">
-                     {loadingBg ? <span className="text-[10px] theme-primary-text animate-pulse">Cargando...</span> : form.bgUrl ? <img src={form.bgUrl} alt="Fondo" className="w-full h-full object-cover opacity-80"/> : <ImageIcon className="opacity-50" />}
-                     <input type="file" accept="image/*" onChange={handleBgUpload} className="absolute inset-0 opacity-0 cursor-pointer"/>
-                  </div>
-                  <div className="flex-1 space-y-2">
-                     <p className="text-xs opacity-60 mb-2">Una imagen oscura hará resaltar los colores.</p>
-                     <input type="text" value={form.bgUrl || ''} onChange={e=>setForm({...form, bgUrl: e.target.value})} placeholder="https://..." className="w-full bg-black/40 border border-white/10 rounded-lg p-2 text-xs outline-none focus:theme-primary-border" />
-                     <div className="flex items-center gap-2 mt-2">
-                        <input type="checkbox" checked={form.exportWithBg !== false} onChange={e=>setForm({...form, exportWithBg: e.target.checked})} className="w-4 h-4 accent-lime-500" />
-                        <span className="text-xs font-bold opacity-80">Si no se elige un fondo específico para exportables (ver abajo), usar este.</span>
-                     </div>
-                  </div>
-               </div>
-            </div>
-            )}
-
-            {config.feature_colors !== false && (
-            <>
-               <div>
-                  <label className="block text-sm font-bold opacity-60 mb-2">Color Principal</label>
-                  <div className="flex items-center gap-3">
-                     <input type="color" value={form.primaryColor || '#a3e635'} onChange={e=>setForm({...form, primaryColor: e.target.value})} className="w-10 h-10 bg-transparent border-none cursor-pointer rounded-xl shrink-0" />
-                     <input type="text" value={form.primaryColor || '#a3e635'} onChange={e=>setForm({...form, primaryColor: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 outline-none focus:theme-primary-border" />
-                  </div>
-               </div>
-
-               <div>
-                  <label className="block text-sm font-bold opacity-60 mb-2">Color del Título de la Nav</label>
-                  <div className="flex items-center gap-3">
-                     <input type="color" value={form.titleColor || '#a3e635'} onChange={e=>setForm({...form, titleColor: e.target.value})} className="w-10 h-10 bg-transparent border-none cursor-pointer rounded-xl shrink-0" />
-                     <input type="text" value={form.titleColor || '#a3e635'} onChange={e=>setForm({...form, titleColor: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 outline-none focus:theme-primary-border" />
-                  </div>
-               </div>
-
-               <div>
-                  <label className="block text-sm font-bold opacity-60 mb-2">Color Secundario (Acento)</label>
-                  <div className="flex items-center gap-3">
-                     <input type="color" value={form.accentColor || '#fbbf24'} onChange={e=>setForm({...form, accentColor: e.target.value})} className="w-10 h-10 bg-transparent border-none cursor-pointer rounded-xl shrink-0" />
-                     <input type="text" value={form.accentColor || '#fbbf24'} onChange={e=>setForm({...form, accentColor: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 outline-none focus:theme-primary-border" />
-                  </div>
-               </div>
-
-               <div>
-                  <label className="block text-sm font-bold opacity-60 mb-2">Color de Texto Base</label>
-                  <div className="flex items-center gap-3">
-                     <input type="color" value={form.textColor || '#f8fafc'} onChange={e=>setForm({...form, textColor: e.target.value})} className="w-10 h-10 bg-transparent border-none cursor-pointer rounded-xl shrink-0" />
-                     <input type="text" value={form.textColor || '#f8fafc'} onChange={e=>setForm({...form, textColor: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 outline-none focus:theme-primary-border" />
-                  </div>
-               </div>
-
-               <div>
-                  <label className="block text-sm font-bold opacity-60 mb-2">Color de Fondo General (Fallback)</label>
-                  <div className="flex flex-col gap-2">
-                     <div className="flex items-center gap-3">
-                        <input type="color" value={form.bgColor?.startsWith('#') ? form.bgColor : '#0f172a'} onChange={e=>setForm({...form, bgColor: e.target.value})} className="w-10 h-10 bg-transparent border-none cursor-pointer rounded-xl shrink-0" />
-                        <input type="text" value={form.bgColor || '#0f172a'} onChange={e=>setForm({...form, bgColor: e.target.value})} placeholder="Ej: rgba(2,6,23,0.9) o #020617" className="w-full bg-black/40 border border-white/10 rounded-xl p-3 outline-none focus:theme-primary-border text-sm" />
-                     </div>
-                     <p className="text-[10px] opacity-60 mt-1 leading-tight">Puedes usar formato <strong>rgba(r,g,b,a)</strong> en la caja de texto para añadir opacidad. Ejemplo: <code>rgba(0, 0, 0, 0.8)</code></p>
-                  </div>
-               </div>
-
-               <div className="md:col-span-2 lg:col-span-1">
-                  <label className="block text-sm font-bold opacity-60 mb-2">Color de Tarjetas</label>
-                  <input type="text" value={form.cardColor || ''} onChange={e=>setForm({...form, cardColor: e.target.value})} placeholder="Ej: rgba(15, 23, 42, 0.7) o #0f172a" className="w-full bg-black/40 border border-white/10 rounded-xl p-3 outline-none focus:theme-primary-border text-sm" />
-                  <p className="text-[10px] opacity-60 mt-1">Usa formato rgba(...) si deseas transparencia en los contenedores.</p>
-               </div>
-            </>
-            )}
-
-            {/* NUEVA SECCIÓN DE EXPORTABLES */}
-            <div className="lg:col-span-3 mt-6 pt-6 border-t border-white/10 space-y-6">
+       {/* 2. Textos de Bienvenida */}
+       {config.feature_welcome !== false && (
+         <div className="bg-black/20 p-6 rounded-3xl border border-white/10">
+           <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-black uppercase tracking-wider theme-primary-text flex items-center"><FileText className="mr-2" /> Portada & Bienvenida</h3>
+              <label className="flex items-center gap-2 cursor-pointer bg-black/40 px-3 py-1.5 rounded-xl border border-white/5 hover:border-white/20 transition-colors">
+                 <input type="checkbox" checked={form.showWelcomeMessage} onChange={e=>setForm({...form, showWelcomeMessage: e.target.checked})} className="accent-lime-500 w-4 h-4" />
+                 <span className="text-xs font-bold uppercase">Mostrar</span>
+              </label>
+           </div>
+           
+           {form.showWelcomeMessage && (
+             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in slide-in-from-top-2">
                 <div>
-                   <h4 className="font-black text-lg theme-accent-text mb-2 flex items-center"><Download size={20} className="mr-2" /> Personalización de Carteles (Descargas / WhatsApp)</h4>
-                   <p className="text-xs opacity-60">Estos ajustes solo aplicarán para las imágenes que se exporten (Resultados, Llaves y Zonas).</p>
+                   <label className="text-xs font-bold opacity-60 uppercase mb-1 block">Título Principal (Grande)</label>
+                   <textarea value={form.welcomeTitle} onChange={e=>setForm({...form, welcomeTitle: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 outline-none h-20" />
                 </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-black/40 p-6 rounded-2xl border border-white/5">
-                   
-                   <div className="space-y-3 md:col-span-2 lg:col-span-1">
-                      <label className="block text-sm font-bold opacity-80">Fondo Específico para Carteles (Opcional)</label>
-                      <div className="flex items-center gap-4">
-                         <div className="w-32 h-20 bg-black/60 rounded-lg border-2 border-dashed border-white/20 flex items-center justify-center overflow-hidden relative">
-                            {loadingExportBg ? <span className="text-[10px] theme-primary-text animate-pulse">Cargando...</span> : form.exportBgUrl ? <img src={form.exportBgUrl} alt="ExportBg" className="w-full h-full object-cover opacity-80"/> : <ImageIcon className="opacity-50" />}
-                            <input type="file" accept="image/*" onChange={handleExportBgUpload} className="absolute inset-0 opacity-0 cursor-pointer"/>
-                         </div>
-                         <div className="flex-1 space-y-2">
-                            <input type="text" value={form.exportBgUrl || ''} onChange={e=>setForm({...form, exportBgUrl: e.target.value})} placeholder="URL o subir imagen..." className="w-full bg-black/60 border border-white/10 rounded-lg p-2 text-xs outline-none focus:theme-primary-border" />
-                            {form.exportBgUrl && <button onClick={()=>setForm({...form, exportBgUrl: ''})} className="text-xs text-red-400 font-bold hover:text-red-300">Borrar imagen específica</button>}
-                         </div>
-                      </div>
-                      <p className="text-[10px] opacity-60 mt-1">Si subes una imagen aquí, tendrá prioridad sobre el fondo del sitio al exportar.</p>
-                   </div>
-
-                   <div className="space-y-3">
-                      <label className="block text-sm font-bold opacity-80">Color Sólido / Overlay para Carteles</label>
-                      <div className="flex flex-col gap-2">
-                         <div className="flex items-center gap-3">
-                            <input type="color" value={form.exportBgColor?.startsWith('#') ? form.exportBgColor : '#0f172a'} onChange={e=>setForm({...form, exportBgColor: e.target.value})} className="w-10 h-10 bg-transparent border-none cursor-pointer rounded-xl shrink-0" />
-                            <input type="text" value={form.exportBgColor || ''} onChange={e=>setForm({...form, exportBgColor: e.target.value})} placeholder="Dejar vacío para usar el general..." className="w-full bg-black/60 border border-white/10 rounded-lg p-2 text-xs outline-none focus:theme-primary-border" />
-                         </div>
-                         <p className="text-[10px] opacity-60 mt-1 leading-tight">Se usará como color base en caso de no haber imagen, o como "tinte" sobre la imagen de fondo para que el texto sea legible.</p>
-                      </div>
-                   </div>
-
-                   <div className="md:col-span-2 pt-4 border-t border-white/10">
-                      <label className="flex items-center gap-3 cursor-pointer p-3 bg-white/5 rounded-xl border border-white/5 hover:bg-white/10 transition-colors">
-                         <input type="checkbox" checked={form.exportShowSponsors} onChange={e=>setForm({...form, exportShowSponsors: e.target.checked})} className="w-6 h-6 accent-lime-500 cursor-pointer" />
-                         <span className="font-bold text-sm">Añadir Logos de Sponsors Oficiales al pie de las imágenes generadas.</span>
-                      </label>
-                   </div>
+                <div>
+                   <label className="text-xs font-bold opacity-60 uppercase mb-1 block">Subtítulo (Chico)</label>
+                   <textarea value={form.welcomeSubtitle} onChange={e=>setForm({...form, welcomeSubtitle: e.target.value})} className="w-full bg-black/40 border border-white/10 rounded-xl p-3 outline-none h-20" />
                 </div>
-            </div>
-
+             </div>
+           )}
          </div>
-      </div>
-      )}
+       )}
 
-      <button onClick={handleSave} className="w-full theme-primary-bg text-black font-black rounded-xl p-4 uppercase tracking-widest transition-colors shadow-lg hover:opacity-80">Guardar Opciones de Configuración</button>
-      {msg && <p className="theme-primary-text text-center font-bold text-sm bg-black/20 py-3 rounded-lg border theme-primary-border">{msg}</p>}
-    </div>
-  )
+       {/* 3. Colores y Temas */}
+       {config.feature_colors !== false && (
+         <div className="bg-black/20 p-6 rounded-3xl border border-white/10">
+           <h3 className="text-xl font-black mb-4 uppercase tracking-wider theme-primary-text flex items-center"><Settings className="mr-2" /> Colores del Tema</h3>
+           
+           <div className="flex flex-wrap gap-2 mb-6 p-4 bg-black/40 rounded-xl border border-white/5">
+              <span className="text-xs font-bold w-full mb-2 opacity-60 uppercase">Paletas Predefinidas:</span>
+              {presetColors.map(p => (
+                 <button key={p.name} onClick={() => applyPreset(p)} className="flex items-center gap-2 bg-black/40 px-3 py-2 rounded-lg border border-white/10 hover:border-white/30 transition-colors">
+                    <div className="w-4 h-4 rounded-full border border-white/20 shadow-inner" style={{backgroundColor: p.p}}></div>
+                    <span className="text-xs font-bold">{p.name}</span>
+                 </button>
+              ))}
+           </div>
+
+           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              {[
+                { label: 'Color Principal', field: 'primaryColor' },
+                { label: 'Color Secundario', field: 'accentColor' },
+                { label: 'Fondo Base (Overlay)', field: 'bgColor' },
+                { label: 'Color de Textos', field: 'textColor' },
+                { label: 'Fondo Tarjetas', field: 'cardColor' },
+              ].map(item => (
+                <div key={item.field} className="flex flex-col gap-2">
+                   <label className="text-[10px] font-bold opacity-60 uppercase">{item.label}</label>
+                   <div className="flex gap-2">
+                      <input type="color" value={form[item.field]} onChange={e=>setForm({...form, [item.field]: e.target.value})} className="w-10 h-10 rounded border-0 bg-transparent cursor-pointer" />
+                      <input type="text" value={form[item.field]} onChange={e=>setForm({...form, [item.field]: e.target.value})} className="flex-1 bg-black/40 border border-white/10 rounded p-2 text-xs font-mono uppercase" />
+                   </div>
+                </div>
+              ))}
+           </div>
+
+           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6 pt-6 border-t border-white/10">
+               <div>
+                   <label className="text-[10px] font-bold opacity-60 uppercase mb-2 block">Opacidad Fondo / Overlay</label>
+                   <div className="flex items-center gap-3">
+                      <input type="range" min="0" max="100" value={form.bgOpacity} onChange={e=>setForm({...form, bgOpacity: Number(e.target.value)})} className="flex-1 accent-lime-500" />
+                      <span className="text-xs font-mono w-10 text-right">{form.bgOpacity}%</span>
+                   </div>
+               </div>
+               <div>
+                   <label className="text-[10px] font-bold opacity-60 uppercase mb-2 block">Opacidad Tarjetas (Listados)</label>
+                   <div className="flex items-center gap-3">
+                      <input type="range" min="0" max="100" value={form.cardOpacity} onChange={e=>setForm({...form, cardOpacity: Number(e.target.value)})} className="flex-1 accent-lime-500" />
+                      <span className="text-xs font-mono w-10 text-right">{form.cardOpacity}%</span>
+                   </div>
+               </div>
+           </div>
+         </div>
+       )}
+
+       {/* 4. Fondos */}
+       {config.feature_background !== false && (
+         <div className="bg-black/20 p-6 rounded-3xl border border-white/10">
+           <h3 className="text-xl font-black mb-4 uppercase tracking-wider theme-primary-text flex items-center"><ImageIcon className="mr-2" /> Fondos y Exportación</h3>
+           
+           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              {/* Fondo App */}
+              <div className="space-y-3">
+                 <label className="text-sm font-bold block uppercase tracking-widest opacity-80 border-b border-white/10 pb-2">Fondo Principal (App)</label>
+                 <div className="relative h-32 bg-black/40 rounded-xl border border-white/10 overflow-hidden flex items-center justify-center group">
+                    {form.bgUrl ? <img src={form.bgUrl} className="w-full h-full object-cover opacity-50 group-hover:opacity-30 transition-opacity" alt="bg" /> : <ImageIcon className="opacity-20 w-8 h-8" />}
+                    <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, 'bgUrl', setUploadingBg)} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
+                    <div className="absolute pointer-events-none flex flex-col items-center">
+                       {uploadingBg ? <span className="text-xs font-bold animate-pulse">Subiendo...</span> : <span className="text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 px-3 py-1.5 rounded-lg border border-white/10 shadow-lg">Cambiar Imagen</span>}
+                    </div>
+                 </div>
+                 <button onClick={() => setForm({...form, bgUrl: ''})} className="text-[10px] text-red-400 font-bold uppercase hover:underline">Eliminar Fondo (Usar Color Sólido)</button>
+              </div>
+
+              {/* Fondo Export */}
+              <div className="space-y-3">
+                 <label className="text-sm font-bold block uppercase tracking-widest opacity-80 border-b border-white/10 pb-2">Fondo para Compartir (Descargas)</label>
+                 
+                 <label className="flex items-center gap-2 cursor-pointer mb-2">
+                     <input type="checkbox" checked={form.exportWithBg} onChange={e=>setForm({...form, exportWithBg: e.target.checked})} className="accent-lime-500 w-4 h-4" />
+                     <span className="text-xs font-bold">Incluir imagen de fondo al exportar</span>
+                 </label>
+
+                 {form.exportWithBg && (
+                    <div className="relative h-24 bg-black/40 rounded-xl border border-white/10 overflow-hidden flex items-center justify-center group">
+                       {form.exportBgUrl ? <img src={form.exportBgUrl} className="w-full h-full object-cover opacity-50 group-hover:opacity-30 transition-opacity" alt="bg exp" /> : <div className="text-[10px] opacity-50 text-center px-4 leading-tight">Mismo de la App<br/>(O sube uno especial aquí)</div>}
+                       <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, 'exportBgUrl', setUploadingExportBg)} className="absolute inset-0 opacity-0 cursor-pointer z-10" />
+                       <div className="absolute pointer-events-none flex flex-col items-center">
+                          {uploadingExportBg ? <span className="text-xs font-bold animate-pulse">Subiendo...</span> : <span className="text-xs font-bold opacity-0 group-hover:opacity-100 transition-opacity bg-black/60 px-3 py-1.5 rounded-lg border border-white/10 shadow-lg">Fondo Especial</span>}
+                       </div>
+                    </div>
+                 )}
+                 {form.exportBgUrl && <button onClick={() => setForm({...form, exportBgUrl: ''})} className="text-[10px] text-red-400 font-bold uppercase hover:underline">Usar fondo por defecto</button>}
+                 
+                 <div className="mt-4 pt-4 border-t border-white/5">
+                     <label className="flex items-center gap-2 cursor-pointer">
+                         <input type="checkbox" checked={form.exportShowSponsors} onChange={e=>setForm({...form, exportShowSponsors: e.target.checked})} className="accent-lime-500 w-4 h-4" />
+                         <span className="text-xs font-bold text-amber-400">Incrustar logos de Sponsors al pie de las imágenes</span>
+                     </label>
+                 </div>
+                 
+                 <div className="mt-6 pt-6 border-t border-white/5 space-y-4">
+                     <label className="text-sm font-bold block uppercase tracking-widest opacity-80 border-b border-white/10 pb-2">Marco de Exportación</label>
+                     <div className="flex flex-col xl:flex-row gap-6">
+                         <div className="flex-1">
+                             <label className="text-[10px] font-bold opacity-60 uppercase block mb-2">Grosor del Marco (0 = Desactivado)</label>
+                             <div className="flex items-center gap-3">
+                                <input type="range" min="0" max="50" value={form.exportBorderWidth} onChange={e=>setForm({...form, exportBorderWidth: Number(e.target.value)})} className="flex-1 accent-lime-500" />
+                                <span className="text-xs font-mono w-10 text-right">{form.exportBorderWidth}px</span>
+                             </div>
+                         </div>
+                         <div>
+                             <label className="text-[10px] font-bold opacity-60 uppercase block mb-2">Color del Marco</label>
+                             <div className="flex gap-2">
+                                 <input type="color" value={form.exportBorderColor} onChange={e=>setForm({...form, exportBorderColor: e.target.value})} className="w-10 h-10 rounded border-0 bg-transparent cursor-pointer" />
+                                 <input type="text" value={form.exportBorderColor} onChange={e=>setForm({...form, exportBorderColor: e.target.value})} className="bg-black/40 border border-white/10 rounded p-2 text-xs font-mono uppercase w-24" />
+                             </div>
+                         </div>
+                     </div>
+                 </div>
+              </div>
+           </div>
+         </div>
+       )}
+
+       <div className="flex flex-col items-end pt-4 pb-12">
+         <button onClick={handleSave} className="theme-primary-bg text-black font-black px-10 py-4 rounded-xl text-lg uppercase tracking-widest hover:opacity-80 transition-colors shadow-2xl flex items-center">
+            <CheckCircle2 className="mr-3" size={24} /> Guardar Toda la Configuración
+         </button>
+         {msg && <p className="mt-4 font-bold text-sm theme-primary-text animate-pulse">{msg}</p>}
+       </div>
+     </div>
+   );
 }
 
-function NavButton({ icon, label, active, onClick, config, className="" }) {
+// --- COMPONENTE: BOTÓN DE NAVEGACIÓN ---
+function NavButton({ icon, label, active, onClick, className = '', config }) {
   return (
-    <button onClick={onClick} className={`flex items-center space-x-2 px-4 py-3 text-sm font-bold transition-all border-b-2 ${active ? 'bg-white/10 theme-primary-text' : 'border-transparent opacity-60 hover:opacity-100 hover:bg-white/5'} ${className}`} style={{ borderBottomColor: active ? (config.primaryColor || '#a3e635') : 'transparent' }}>
-      {React.cloneElement(icon, { size: 18 })} <span className="theme-font-secondary tracking-wide">{label}</span>
+    <button
+      onClick={onClick}
+      className={`flex items-center space-x-2 px-3 lg:px-4 py-2.5 rounded-xl text-sm font-bold transition-all
+        ${active ? 'theme-primary-bg shadow-lg shadow-lime-500/20 text-black' : 'text-slate-300 hover:bg-white/10 hover:text-white'}
+        ${className}
+      `}
+      style={active ? { backgroundColor: config.primaryColor || '#a3e635' } : {}}
+    >
+      <div className={active ? 'opacity-100' : 'opacity-70'}>{icon}</div>
+      <span className="hidden sm:inline">{label}</span>
     </button>
   );
 }
